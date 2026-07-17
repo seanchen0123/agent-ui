@@ -31,7 +31,7 @@ const SkeletonList: FC<SkeletonListProps> = ({ skeletonCount }) => {
   ))
 }
 
-const Sessions = () => {
+const Sessions = ({ onSessionSelect }: { onSessionSelect?: () => void }) => {
   const [agentId] = useQueryState('agent', {
     parse: (v: string | null) => v || undefined,
     history: 'push'
@@ -117,8 +117,11 @@ const Sessions = () => {
   }, [sessionId])
 
   const handleSessionClick = useCallback(
-    (id: string) => () => setSelectedSessionId(id),
-    []
+    (id: string) => () => {
+      setSelectedSessionId(id)
+      onSessionSelect?.()
+    },
+    [onSessionSelect]
   )
 
   if (isSessionsLoading || isEndpointLoading) {

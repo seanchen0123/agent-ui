@@ -4,7 +4,7 @@ import { ModeSelector } from '@/components/chat/Sidebar/ModeSelector'
 import { EntitySelector } from '@/components/chat/Sidebar/EntitySelector'
 import useChatActions from '@/hooks/useChatActions'
 import { useStore } from '@/store'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion } from 'framer-motion'
 import { useState, useEffect } from 'react'
 import Icon from '@/components/ui/icon'
 import { getProviderIcon } from '@/lib/modelProvider'
@@ -15,6 +15,7 @@ import { toast } from 'sonner'
 import { useQueryState } from 'nuqs'
 import { truncateText } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useIsDesktop } from '@/hooks/useMediaQuery'
 
 const ENDPOINT_PLACEHOLDER = 'NO ENDPOINT ADDED'
 const SidebarHeader = () => (
@@ -145,41 +146,25 @@ const Endpoint = () => {
             onClick={() => setIsEditing(true)}
             transition={{ type: 'spring', stiffness: 400, damping: 10 }}
           >
-            <AnimatePresence mode="wait">
-              {isHovering ? (
-                <motion.div
-                  key="endpoint-display-hover"
-                  className="absolute inset-0 flex items-center justify-center"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  <p className="flex items-center gap-2 whitespace-nowrap text-xs font-medium text-primary">
-                    <Icon type="edit" size="xxs" /> EDIT AGENTOS
-                  </p>
-                </motion.div>
-              ) : (
-                <motion.div
-                  key="endpoint-display"
-                  className="absolute inset-0 flex items-center justify-between px-3"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  <p className="text-xs font-medium text-muted">
-                    {isMounted
-                      ? truncateText(selectedEndpoint, 21) ||
-                        ENDPOINT_PLACEHOLDER
-                      : 'http://localhost:7777'}
-                  </p>
-                  <div
-                    className={`size-2 shrink-0 rounded-full ${getStatusColor(isEndpointActive)}`}
-                  />
-                </motion.div>
-              )}
-            </AnimatePresence>
+            {isHovering ? (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <p className="flex items-center gap-2 whitespace-nowrap text-xs font-medium text-primary">
+                  <Icon type="edit" size="xxs" /> EDIT AGENTOS
+                </p>
+              </div>
+            ) : (
+              <div className="absolute inset-0 flex items-center justify-between px-3">
+                <p className="text-xs font-medium text-muted">
+                  {isMounted
+                    ? truncateText(selectedEndpoint, 21) ||
+                      ENDPOINT_PLACEHOLDER
+                    : 'http://localhost:7777'}
+                </p>
+                <div
+                  className={`size-2 shrink-0 rounded-full ${getStatusColor(isEndpointActive)}`}
+                />
+              </div>
+            )}
           </motion.div>
           <Button
             variant="ghost"
@@ -201,14 +186,17 @@ const Endpoint = () => {
   )
 }
 
-const Sidebar = ({
+const SidebarContent = ({
+  isCollapsed,
   hasEnvToken,
-  envToken
+  envToken,
+  onCloseMobileSidebar
 }: {
+  isCollapsed: boolean
   hasEnvToken?: boolean
   envToken?: string
+  onCloseMobileSidebar?: () => void
 }) => {
-  const [isCollapsed, setIsCollapsed] = useState(false)
   const { clearChat, focusChatInput, initialize } = useChatActions()
   const {
     messages,
@@ -225,14 +213,81 @@ const Sidebar = ({
 
   useEffect(() => {
     setIsMounted(true)
-
     if (hydrated) initialize()
   }, [selectedEndpoint, initialize, hydrated, mode])
 
   const handleNewChat = () => {
     clearChat()
     focusChatInput()
+    onCloseMobileSidebar?.()
   }
+
+  return (
+    <motion.div
+      className="w-60 space-y-5"
+      initial={{ opacity: 0, x: -20 }}
+      animate={{ opacity: isCollapsed ? 0 : 1, x: isCollapsed ? -20 : 0 }}
+      transition={{ duration: 0.3, ease: 'easeInOut' }}
+      style={{
+        pointerEvents: isCollapsed ? 'none' : 'auto'
+      }}
+    >
+      <SidebarHeader />
+      <NewChatButton
+        disabled={messages.length === 0}
+        onClick={handleNewChat}
+      />
+      {isMounted && (
+        <>
+          <Endpoint />
+          <AuthToken hasEnvToken={hasEnvToken} envToken={envToken} />
+          {isEndpointActive && (
+            <>
+              <motion.div
+                className="flex w-full flex-col items-start gap-2"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.5, ease: 'easeInOut' }}
+              >
+                <div className="text-xs font-medium uppercase text-primary">
+                  Mode
+                </div>
+                {isEndpointLoading ? (
+                  <div className="flex w-full flex-col gap-2">
+                    {Array.from({ length: 3 }).map((_, index) => (
+                      <Skeleton
+                        key={index}
+                        className="h-9 w-full rounded-xl"
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <>
+                    <ModeSelector />
+                    <EntitySelector />
+                    {selectedModel && (agentId || teamId) && (
+                      <ModelDisplay model={selectedModel} />
+                    )}
+                  </>
+                )}
+              </motion.div>
+              <Sessions onSessionSelect={onCloseMobileSidebar} />
+            </>
+          )}
+        </>
+      )}
+    </motion.div>
+  )
+}
+
+const DesktopSidebar = ({
+  hasEnvToken,
+  envToken
+}: {
+  hasEnvToken?: boolean
+  envToken?: string
+}) => {
+  const [isCollapsed, setIsCollapsed] = useState(false)
 
   return (
     <motion.aside
@@ -254,61 +309,78 @@ const Sidebar = ({
           className={`transform ${isCollapsed ? 'rotate-180' : 'rotate-0'}`}
         />
       </motion.button>
-      <motion.div
-        className="w-60 space-y-5"
-        initial={{ opacity: 0, x: -20 }}
-        animate={{ opacity: isCollapsed ? 0 : 1, x: isCollapsed ? -20 : 0 }}
-        transition={{ duration: 0.3, ease: 'easeInOut' }}
-        style={{
-          pointerEvents: isCollapsed ? 'none' : 'auto'
-        }}
-      >
-        <SidebarHeader />
-        <NewChatButton
-          disabled={messages.length === 0}
-          onClick={handleNewChat}
-        />
-        {isMounted && (
-          <>
-            <Endpoint />
-            <AuthToken hasEnvToken={hasEnvToken} envToken={envToken} />
-            {isEndpointActive && (
-              <>
-                <motion.div
-                  className="flex w-full flex-col items-start gap-2"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ duration: 0.5, ease: 'easeInOut' }}
-                >
-                  <div className="text-xs font-medium uppercase text-primary">
-                    Mode
-                  </div>
-                  {isEndpointLoading ? (
-                    <div className="flex w-full flex-col gap-2">
-                      {Array.from({ length: 3 }).map((_, index) => (
-                        <Skeleton
-                          key={index}
-                          className="h-9 w-full rounded-xl"
-                        />
-                      ))}
-                    </div>
-                  ) : (
-                    <>
-                      <ModeSelector />
-                      <EntitySelector />
-                      {selectedModel && (agentId || teamId) && (
-                        <ModelDisplay model={selectedModel} />
-                      )}
-                    </>
-                  )}
-                </motion.div>
-                <Sessions />
-              </>
-            )}
-          </>
-        )}
-      </motion.div>
+      <SidebarContent
+        isCollapsed={isCollapsed}
+        hasEnvToken={hasEnvToken}
+        envToken={envToken}
+      />
     </motion.aside>
+  )
+}
+
+const MobileSidebar = ({
+  isOpen,
+  onClose,
+  hasEnvToken,
+  envToken
+}: {
+  isOpen: boolean
+  onClose: () => void
+  hasEnvToken?: boolean
+  envToken?: string
+}) => (
+  <motion.aside
+    className="fixed left-0 top-0 z-50 h-screen w-72 flex flex-col overflow-hidden px-2 py-3 font-dmmono bg-background/95 backdrop-blur-sm"
+    initial={{ x: '-100%' }}
+    animate={{ x: isOpen ? 0 : '-100%' }}
+    transition={{ type: 'tween', duration: 0.3, ease: 'easeInOut' }}
+  >
+    <motion.button
+      onClick={onClose}
+      className="absolute right-2 top-2 z-10 p-1"
+      aria-label="Close sidebar"
+      type="button"
+      whileTap={{ scale: 0.95 }}
+    >
+      <Icon type="x" size="sm" />
+    </motion.button>
+    <SidebarContent
+      isCollapsed={false}
+      hasEnvToken={hasEnvToken}
+      envToken={envToken}
+      onCloseMobileSidebar={onClose}
+    />
+  </motion.aside>
+)
+
+const Sidebar = ({
+  hasEnvToken,
+  envToken,
+  isMobileSidebarOpen,
+  setIsMobileSidebarOpen
+}: {
+  hasEnvToken?: boolean
+  envToken?: string
+  isMobileSidebarOpen?: boolean
+  setIsMobileSidebarOpen?: (open: boolean) => void
+}) => {
+  const isDesktop = useIsDesktop()
+
+  const handleCloseMobileSidebar = () => {
+    setIsMobileSidebarOpen?.(false)
+  }
+
+  if (isDesktop) {
+    return <DesktopSidebar hasEnvToken={hasEnvToken} envToken={envToken} />
+  }
+
+  return (
+    <MobileSidebar
+      isOpen={isMobileSidebarOpen ?? false}
+      onClose={handleCloseMobileSidebar}
+      hasEnvToken={hasEnvToken}
+      envToken={envToken}
+    />
   )
 }
 
