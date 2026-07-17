@@ -109,7 +109,7 @@ const ChatBlankState = () => {
       className="flex flex-col items-center text-center font-geist"
       aria-label="Welcome message"
     >
-      <div className="flex max-w-3xl flex-col gap-y-8">
+      <div className="flex lg:max-w-2xl flex-col gap-y-8">
         <motion.h1
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -118,75 +118,14 @@ const ChatBlankState = () => {
         >
           <div className="flex items-center justify-center gap-x-2 whitespace-nowrap font-medium">
             <span className="flex items-center font-[600]">
-              This is an open-source
+              Unlock insights. 
             </span>
-            <span className="inline-flex translate-y-[10px] scale-125 items-center transition-transform duration-200 hover:rotate-6">
-              <Link
-                href={EXTERNAL_LINKS.agno}
-                target="_blank"
-                rel="noopener"
-                className="cursor-pointer"
-              >
-                <Icon type="agno-tag" size="default" />
-              </Link>
-            </span>
-            <span className="flex items-center font-[600]">
-              Agent UI, built with
-            </span>
-            <span className="inline-flex translate-y-[5px] scale-125 items-center">
-              <div className="relative ml-2 h-[40px] w-[90px]">
-                {TECH_ICONS.map((icon) => (
-                  <motion.div
-                    key={icon.type}
-                    className={`absolute ${icon.position} top-0`}
-                    style={{ zIndex: icon.zIndex }}
-                    variants={iconVariants}
-                    initial="initial"
-                    whileHover="hover"
-                    animate={hoveredIcon === icon.type ? 'hover' : 'exit'}
-                    onHoverStart={() => setHoveredIcon(icon.type)}
-                    onHoverEnd={() => setHoveredIcon(null)}
-                  >
-                    <Link
-                      href={icon.link}
-                      target="_blank"
-                      rel="noopener"
-                      className="relative block cursor-pointer"
-                    >
-                      <div>
-                        <Icon type={icon.type} size="default" />
-                      </div>
-                      <motion.div
-                        className="pointer-events-none absolute bottom-full left-1/2 mb-1 -translate-x-1/2 transform whitespace-nowrap rounded bg-neutral-800 px-2 py-1 text-xs text-primary"
-                        variants={tooltipVariants}
-                        initial="hidden"
-                        animate={
-                          hoveredIcon === icon.type ? 'visible' : 'hidden'
-                        }
-                      >
-                        {icon.name}
-                      </motion.div>
-                    </Link>
-                  </motion.div>
-                ))}
-              </div>
+            <span className="hidden md:inline-flex translate-y-[10px] scale-125 items-center transition-transform duration-200 hover:rotate-6">
+              <Icon type="agno-tag" size="default" />
             </span>
           </div>
-          <p>For the full experience, visit the AgentOS</p>
+          <p>Ask anything about your data.</p>
         </motion.h1>
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.5 }}
-          className="flex justify-center gap-4"
-        >
-          <ActionButton
-            href={EXTERNAL_LINKS.documentation}
-            variant="primary"
-            text="GO TO DOCS"
-          />
-          <ActionButton href={EXTERNAL_LINKS.agenOS} text="VISIT AGENTOS" />
-        </motion.div>
       </div>
     </section>
   )
