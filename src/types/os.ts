@@ -4,8 +4,9 @@ export interface ToolCall {
   tool_call_id: string
   tool_name: string
   tool_args: Record<string, string>
-  tool_call_error: boolean
-  metrics: {
+  tool_call_error: boolean | null
+  result?: string | null
+  metrics?: {
     time: number
   }
   created_at: number

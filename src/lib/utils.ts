@@ -42,3 +42,59 @@ export const getJsonMarkdown = (content: object = {}) => {
 
   return jsonBlock
 }
+
+export interface ThinkSegment {
+  type: 'think' | 'text'
+  content: string
+}
+
+export const parseThinkSegments = (content: string): ThinkSegment[] => {
+  const segments: ThinkSegment[] = []
+  const thinkStartTag = '<think>'
+  const thinkEndTag = '</think>'
+
+  let currentIndex = 0
+
+  while (currentIndex < content.length) {
+    const startTagIndex = content.indexOf(thinkStartTag, currentIndex)
+
+    if (startTagIndex === -1) {
+      if (currentIndex < content.length) {
+        segments.push({
+          type: 'text',
+          content: content.slice(currentIndex)
+        })
+      }
+      break
+    }
+
+    if (startTagIndex > currentIndex) {
+      segments.push({
+        type: 'text',
+        content: content.slice(currentIndex, startTagIndex)
+      })
+    }
+
+    const endTagIndex = content.indexOf(
+      thinkEndTag,
+      startTagIndex + thinkStartTag.length
+    )
+
+    if (endTagIndex === -1) {
+      segments.push({
+        type: 'think',
+        content: content.slice(startTagIndex + thinkStartTag.length)
+      })
+      break
+    }
+
+    segments.push({
+      type: 'think',
+      content: content.slice(startTagIndex + thinkStartTag.length, endTagIndex)
+    })
+
+    currentIndex = endTagIndex + thinkEndTag.length
+  }
+
+  return segments
+}

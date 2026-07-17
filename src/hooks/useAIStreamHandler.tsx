@@ -267,10 +267,10 @@ const useAIChatStreamHandler = () => {
                 } else if (
                   lastMessage &&
                   lastMessage.role === 'agent' &&
-                  typeof chunk?.content !== 'string' &&
-                  chunk.content !== null
+                  chunk.content != null &&
+                  typeof chunk.content !== 'string'
                 ) {
-                  const jsonBlock = getJsonMarkdown(chunk?.content)
+                  const jsonBlock = getJsonMarkdown(chunk.content)
 
                   lastMessage.content += jsonBlock
                   lastContent = jsonBlock
