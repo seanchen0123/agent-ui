@@ -1,3 +1,10 @@
+export interface TimelineStep {
+  id: string
+  type: 'reasoning' | 'tool_call'
+  content?: string   // reasoning 用
+  tool?: ToolCall    // tool_call 用
+}
+
 export interface ToolCall {
   role: 'user' | 'tool' | 'system' | 'assistant'
   content: string | null
@@ -148,6 +155,7 @@ export interface RunResponseContent {
   videos?: VideoData[]
   audio?: AudioData[]
   response_audio?: ResponseAudio
+  reasoning_content?: string
 }
 
 export interface RunResponse {
@@ -170,6 +178,7 @@ export interface RunResponse {
   videos?: VideoData[]
   audio?: AudioData[]
   response_audio?: ResponseAudio
+  reasoning_content?: string
 }
 
 export interface AgentExtraData {
@@ -198,6 +207,7 @@ export interface ReasoningMessage {
 export interface ChatMessage {
   role: 'user' | 'agent' | 'system' | 'tool'
   content: string
+  reasoning_content?: string
   streamingError?: boolean
   created_at: number
   tool_calls?: ToolCall[]
@@ -209,7 +219,8 @@ export interface ChatMessage {
   images?: ImageData[]
   videos?: VideoData[]
   audio?: AudioData[]
-  response_audio?: ResponseAudio
+  response_audio?: ResponseAudio,
+  timeline?: TimelineStep[]
 }
 
 export interface AgentDetails {
@@ -292,6 +303,7 @@ export interface ChatEntry {
   }
   response: {
     content: string
+    reasoning_content?: string
     tools?: ToolCall[]
     extra_data?: {
       reasoning_steps?: ReasoningSteps[]

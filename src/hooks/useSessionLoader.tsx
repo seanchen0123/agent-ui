@@ -121,6 +121,7 @@ const useSessionLoader = () => {
                 filteredMessages.push({
                   role: 'agent',
                   content: (run.content as string) ?? '',
+                  reasoning_content: (run.reasoning_content as string) ?? undefined,
                   tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
                   extra_data: run.extra_data,
                   images: run.images,

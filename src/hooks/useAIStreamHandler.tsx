@@ -7,7 +7,7 @@ import { useStore } from '../store'
 import { RunEvent, RunResponseContent, type RunResponse } from '@/types/os'
 import { constructEndpointUrl } from '@/lib/constructEndpointUrl'
 import useAIResponseStream from './useAIResponseStream'
-import { ToolCall } from '@/types/os'
+import { ToolCall, ChatMessage } from '@/types/os'
 import { useQueryState } from 'nuqs'
 import { getJsonMarkdown } from '@/lib/utils'
 
@@ -66,6 +66,53 @@ const useAIChatStreamHandler = () => {
         return updatedToolCalls
       } else {
         return [...prevToolCalls, toolCall]
+      }
+    },
+    []
+  )
+
+  const appendReasoningToTimeline = useCallback(
+    (message: ChatMessage, delta: string) => {
+      message.timeline = message.timeline ?? []
+      const last = message.timeline[message.timeline.length - 1]
+      // 只要上一个 timeline 条目不是"进行中的推理轮"，就开新的一轮
+      if (!last || last.type !== 'reasoning') {
+        message.timeline.push({
+          id: `reasoning-${message.timeline.length}`,
+          type: 'reasoning',
+          content: delta
+        })
+      } else {
+        last.content = (last.content || '') + delta
+      }
+    },
+    []
+  )
+
+  const upsertToolCallInTimeline = useCallback(
+    (message: ChatMessage, toolCall: ToolCall) => {
+      message.timeline = message.timeline ?? []
+      const toolCallId =
+        toolCall.tool_call_id || `${toolCall.tool_name}-${toolCall.created_at}`
+      const idx = message.timeline.findIndex(
+        (step) =>
+          step.type === 'tool_call' &&
+          ((step.tool?.tool_call_id &&
+            step.tool.tool_call_id === toolCall.tool_call_id) ||
+            (!step.tool?.tool_call_id &&
+              `${step.tool?.tool_name}-${step.tool?.created_at}` === toolCallId))
+      )
+      if (idx >= 0) {
+        message.timeline[idx] = {
+          ...message.timeline[idx],
+          tool: { ...message.timeline[idx].tool, ...toolCall }
+        }
+      } else {
+        message.timeline.push({
+          id: `tool-${toolCallId}`,
+          type: 'tool_call',
+          tool: toolCall
+        })
       }
     },
     []
@@ -138,6 +185,7 @@ const useAIChatStreamHandler = () => {
       })
 
       let lastContent = ''
+      let lastReasoningContent = ''
       let newSessionId = sessionId
       try {
         const endpointUrl = constructEndpointUrl(selectedEndpoint)
@@ -210,11 +258,9 @@ const useAIChatStreamHandler = () => {
               setMessages((prevMessages) => {
                 const newMessages = [...prevMessages]
                 const lastMessage = newMessages[newMessages.length - 1]
-                if (lastMessage && lastMessage.role === 'agent') {
-                  lastMessage.tool_calls = processChunkToolCalls(
-                    chunk,
-                    lastMessage.tool_calls
-                  )
+                if (lastMessage && lastMessage.role === 'agent' && chunk.tool) {
+                  lastMessage.tool_calls = processToolCall(chunk.tool, lastMessage.tool_calls)
+                  upsertToolCallInTimeline(lastMessage, chunk.tool)   // 新增
                 }
                 return newMessages
               })
@@ -225,66 +271,65 @@ const useAIChatStreamHandler = () => {
               setMessages((prevMessages) => {
                 const newMessages = [...prevMessages]
                 const lastMessage = newMessages[newMessages.length - 1]
-                if (
-                  lastMessage &&
-                  lastMessage.role === 'agent' &&
-                  typeof chunk.content === 'string'
-                ) {
+
+                if (!lastMessage || lastMessage.role !== 'agent') {
+                  return newMessages
+                }
+
+                // --- content 更新：只在是字符串时才追加正文 ---
+                if (typeof chunk.content === 'string') {
                   const uniqueContent = chunk.content.replace(lastContent, '')
                   lastMessage.content += uniqueContent
                   lastContent = chunk.content
-
-                  // Handle tool calls streaming
-                  lastMessage.tool_calls = processChunkToolCalls(
-                    chunk,
-                    lastMessage.tool_calls
-                  )
-                  if (chunk.extra_data?.reasoning_steps) {
-                    lastMessage.extra_data = {
-                      ...lastMessage.extra_data,
-                      reasoning_steps: chunk.extra_data.reasoning_steps
-                    }
-                  }
-
-                  if (chunk.extra_data?.references) {
-                    lastMessage.extra_data = {
-                      ...lastMessage.extra_data,
-                      references: chunk.extra_data.references
-                    }
-                  }
-
-                  lastMessage.created_at =
-                    chunk.created_at ?? lastMessage.created_at
-                  if (chunk.images) {
-                    lastMessage.images = chunk.images
-                  }
-                  if (chunk.videos) {
-                    lastMessage.videos = chunk.videos
-                  }
-                  if (chunk.audio) {
-                    lastMessage.audio = chunk.audio
-                  }
-                } else if (
-                  lastMessage &&
-                  lastMessage.role === 'agent' &&
-                  chunk.content != null &&
-                  typeof chunk.content !== 'string'
-                ) {
+                } else if (chunk.content != null) {
                   const jsonBlock = getJsonMarkdown(chunk.content)
-
                   lastMessage.content += jsonBlock
                   lastContent = jsonBlock
-                } else if (
+                }
+
+                // --- reasoning_content：不再依赖 chunk.content 是否为字符串 ---
+                if (chunk.reasoning_content) {
+                  lastMessage.reasoning_content =
+                    (lastMessage.reasoning_content || '') + chunk.reasoning_content  // 保留原字段，兼容/调试用
+                  appendReasoningToTimeline(lastMessage, chunk.reasoning_content)      // 新增，真正驱动渲染
+                }
+
+                // --- tool_calls：同样解耦 ---
+                lastMessage.tool_calls = processChunkToolCalls(
+                  chunk,
+                  lastMessage.tool_calls
+                )
+
+                if (chunk.extra_data?.reasoning_steps) {
+                  lastMessage.extra_data = {
+                    ...lastMessage.extra_data,
+                    reasoning_steps: chunk.extra_data.reasoning_steps
+                  }
+                }
+                if (chunk.extra_data?.references) {
+                  lastMessage.extra_data = {
+                    ...lastMessage.extra_data,
+                    references: chunk.extra_data.references
+                  }
+                }
+
+                lastMessage.created_at = chunk.created_at ?? lastMessage.created_at
+                if (chunk.images) lastMessage.images = chunk.images
+                if (chunk.videos) lastMessage.videos = chunk.videos
+                if (chunk.audio) lastMessage.audio = chunk.audio
+
+                // --- response_audio 单独处理，不受 content 类型影响 ---
+                if (
                   chunk.response_audio?.transcript &&
                   typeof chunk.response_audio?.transcript === 'string'
                 ) {
                   const transcript = chunk.response_audio.transcript
                   lastMessage.response_audio = {
                     ...lastMessage.response_audio,
-                    transcript:
-                      lastMessage.response_audio?.transcript + transcript
+                    transcript: (lastMessage.response_audio?.transcript || '') + transcript
                   }
                 }
+
                 return newMessages
               })
             } else if (
@@ -363,6 +408,8 @@ const useAIChatStreamHandler = () => {
                     return {
                       ...message,
                       content: updatedContent,
+                      reasoning_content:
+                        chunk.reasoning_content ?? message.reasoning_content,
                       tool_calls: processChunkToolCalls(
                         chunk,
                         message.tool_calls
@@ -391,7 +438,7 @@ const useAIChatStreamHandler = () => {
             updateMessagesWithErrorState()
             setStreamingErrorMessage(error.message)
           },
-          onComplete: () => {}
+          onComplete: () => { }
         })
       } catch (error) {
         updateMessagesWithErrorState()

@@ -19,39 +19,29 @@ interface TimelineItem {
   type: 'think' | 'tool_call' | 'text'
   content?: string
   tool?: ToolCall
-  index: number
+  index: number,
+  source?: 'reasoning' | 'inline'
 }
 
-const parseTimeline = (
-  content: string,
-  toolCalls: ToolCall[]
-): TimelineItem[] => {
-  const segments = parseThinkSegments(content)
+const parseTimeline = (message: ChatMessage): TimelineItem[] => {
   const timeline: TimelineItem[] = []
-  let thinkIndex = 0
-  let toolIndex = 0
 
+  // 优先用状态层已经按真实事件顺序记录好的 timeline
+  message.timeline?.forEach((step, i) => {
+    if (step.type === 'reasoning') {
+      timeline.push({ type: 'think', content: step.content || '', index: i })
+    } else if (step.type === 'tool_call' && step.tool) {
+      timeline.push({ type: 'tool_call', tool: step.tool, index: i })
+    }
+  })
+
+  // 兼容老格式：content 里内联 <think> 标签的情况仍然解析，追加在后面
+  const segments = parseThinkSegments(message.content)
   for (const segment of segments) {
-    if (segment.type === 'think') {
-      timeline.push({
-        type: 'think',
-        content: segment.content,
-        index: thinkIndex++
-      })
-
-      if (toolIndex < toolCalls.length) {
-        timeline.push({
-          type: 'tool_call',
-          tool: toolCalls[toolIndex],
-          index: toolIndex++
-        })
-      }
-    } else if (segment.content.trim()) {
-      timeline.push({
-        type: 'text',
-        content: segment.content,
-        index: timeline.length
-      })
+    if (segment.type === 'think' && segment.content.trim()) {
+      timeline.push({ type: 'think', content: segment.content, index: timeline.length })
+    } else if (segment.type === 'text' && segment.content.trim()) {
+      timeline.push({ type: 'text', content: segment.content, index: timeline.length })
     }
   }
 
@@ -73,19 +63,22 @@ const AgentMessage = ({ message }: MessageProps) => {
       </p>
     )
   } else if (message.content) {
-    const timeline = parseTimeline(message.content, message.tool_calls || [])
+    const timeline = parseTimeline(
+      message
+    )
 
-    const renderTimelineItem = (item: TimelineItem) => {
+    const renderTimelineItem = (item: TimelineItem, i: number) => {
       switch (item.type) {
-        case 'think':
+        case 'think': {
           return (
             <ThinkBlock
-              key={`think-${item.index}`}
+              key={`think-${item.index}-${item.source ?? 'inline'}`}
               content={item.content || ''}
               index={item.index}
-              isStreaming={isStreaming}
+              isStreaming={isStreaming && i === timeline.length - 1}
             />
           )
+        }
         case 'tool_call':
           return (
             <ToolCallCard
@@ -103,13 +96,14 @@ const AgentMessage = ({ message }: MessageProps) => {
         default:
           return null
       }
+
     }
 
     messageContent = (
       <div className="flex w-full flex-col gap-4">
         {timeline.length > 0 ? (
           <div className="flex flex-col gap-4">
-            {timeline.map((item) => renderTimelineItem(item))}
+            {timeline.map((item, index) => renderTimelineItem(item, index))}
           </div>
         ) : (
           <MarkdownRenderer>{message.content}</MarkdownRenderer>
