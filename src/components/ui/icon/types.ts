@@ -37,6 +37,8 @@ export type IconType =
   | 'references'
   | 'trash'
   | 'menu'
+  | 'sun'
+  | 'moon'
 
 export interface IconProps {
   type: IconType
