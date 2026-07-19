@@ -46,10 +46,11 @@ const useSessionLoader = () => {
           dbId,
           authToken
         )
-        setSessionsData(sessions.data ?? [])
+        if (sessions && Array.isArray(sessions.data)) {
+          setSessionsData(sessions.data)
+        }
       } catch {
         toast.error('Error loading sessions')
-        setSessionsData([])
       } finally {
         setIsSessionsLoading(false)
       }

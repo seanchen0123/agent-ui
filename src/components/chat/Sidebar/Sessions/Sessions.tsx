@@ -94,7 +94,6 @@ const Sessions = ({ onSessionSelect }: { onSessionSelect?: () => void }) => {
       setSessionsData([])
       return
     }
-    setSessionsData([])
     getSessions({
       entityType: mode,
       agentId,

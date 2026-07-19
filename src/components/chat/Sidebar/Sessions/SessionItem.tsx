@@ -10,6 +10,7 @@ import { useState } from 'react'
 import DeleteSessionModal from './DeleteSessionModal'
 import useChatActions from '@/hooks/useChatActions'
 import { truncateText, cn } from '@/lib/utils'
+import { useIsDesktop } from '@/hooks/useMediaQuery'
 
 type SessionItemProps = SessionEntry & {
   isSelected: boolean
@@ -33,6 +34,8 @@ const SessionItem = ({
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const { clearChat } = useChatActions()
+
+  const isDesktop = useIsDesktop()
 
   const handleGetSession = async () => {
     if (!(agentId || teamId || dbId)) return
@@ -105,7 +108,7 @@ const SessionItem = ({
         <Button
           variant="ghost"
           size="icon"
-          className="transform opacity-0 transition-all duration-200 ease-in-out group-hover:opacity-100"
+          className={cn('transform transition-all duration-200 ease-in-out group-hover:opacity-100', isDesktop && 'opacity-0')}
           onClick={(e) => {
             e.stopPropagation()
             setIsDeleteModalOpen(true)

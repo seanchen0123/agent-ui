@@ -334,14 +334,6 @@ const useAIChatStreamHandler = () => {
                   ? 'Run cancelled'
                   : 'Error during run')
               setStreamingErrorMessage(errorContent)
-              if (newSessionId) {
-                setSessionsData(
-                  (prevSessionsData) =>
-                    prevSessionsData?.filter(
-                      (session) => session.session_id !== newSessionId
-                    ) ?? null
-                )
-              }
             } else if (
               chunk.event === RunEvent.UpdatingMemory ||
               chunk.event === RunEvent.TeamMemoryUpdateStarted ||
@@ -398,14 +390,6 @@ const useAIChatStreamHandler = () => {
           onError: (error) => {
             updateMessagesWithErrorState()
             setStreamingErrorMessage(error.message)
-            if (newSessionId) {
-              setSessionsData(
-                (prevSessionsData) =>
-                  prevSessionsData?.filter(
-                    (session) => session.session_id !== newSessionId
-                  ) ?? null
-              )
-            }
           },
           onComplete: () => {}
         })
@@ -414,14 +398,6 @@ const useAIChatStreamHandler = () => {
         setStreamingErrorMessage(
           error instanceof Error ? error.message : String(error)
         )
-        if (newSessionId) {
-          setSessionsData(
-            (prevSessionsData) =>
-              prevSessionsData?.filter(
-                (session) => session.session_id !== newSessionId
-              ) ?? null
-          )
-        }
       } finally {
         focusChatInput()
         setIsStreaming(false)
