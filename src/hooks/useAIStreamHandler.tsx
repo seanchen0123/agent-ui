@@ -27,6 +27,63 @@ const useAIChatStreamHandler = () => {
   const setSessionsData = useStore((state) => state.setSessionsData)
   const { streamResponse } = useAIResponseStream()
 
+  /**
+   * 把一段 reasoning_content 增量追加到消息的 timeline 里。
+   * 判断规则：如果 timeline 最后一项已经是「进行中的推理轮」（type === 'reasoning'），
+   * 就直接往它上面追加；否则说明上一轮已经被工具调用打断了，开一个新的推理轮。
+   */
+  const appendReasoningToTimeline = useCallback(
+    (message: ChatMessage, delta: string) => {
+      message.timeline = message.timeline ?? []
+      const last = message.timeline[message.timeline.length - 1]
+      if (!last || last.type !== 'reasoning') {
+        message.timeline.push({
+          id: `reasoning-${message.timeline.length}-${Date.now()}`,
+          type: 'reasoning',
+          content: delta
+        })
+      } else {
+        last.content = (last.content || '') + delta
+      }
+    },
+    []
+  )
+
+  /**
+   * 把一次工具调用写入/更新到消息的 timeline 里（按 tool_call_id 去重合并）。
+   * 这是修复的关键：必须在真正收到 ToolCallStarted / ToolCallCompleted 事件时调用，
+   * 而不是塞在 RunContent 分支内部的死代码里。
+   */
+  const upsertToolCallInTimeline = useCallback(
+    (message: ChatMessage, toolCall: ToolCall) => {
+      message.timeline = message.timeline ?? []
+      const toolCallId =
+        toolCall.tool_call_id || `${toolCall.tool_name}-${toolCall.created_at}`
+      const idx = message.timeline.findIndex(
+        (step) =>
+          step.type === 'tool_call' &&
+          ((step.tool?.tool_call_id &&
+            step.tool.tool_call_id === toolCall.tool_call_id) ||
+            (!step.tool?.tool_call_id &&
+              `${step.tool?.tool_name}-${step.tool?.created_at}` ===
+                toolCallId))
+      )
+      if (idx >= 0) {
+        message.timeline[idx] = {
+          ...message.timeline[idx],
+          tool: { ...message.timeline[idx].tool, ...toolCall }
+        }
+      } else {
+        message.timeline.push({
+          id: `tool-${toolCallId}`,
+          type: 'tool_call',
+          tool: toolCall
+        })
+      }
+    },
+    []
+  )
+
   const updateMessagesWithErrorState = useCallback(() => {
     setMessages((prevMessages) => {
       const newMessages = [...prevMessages]
@@ -66,53 +123,6 @@ const useAIChatStreamHandler = () => {
         return updatedToolCalls
       } else {
         return [...prevToolCalls, toolCall]
-      }
-    },
-    []
-  )
-
-  const appendReasoningToTimeline = useCallback(
-    (message: ChatMessage, delta: string) => {
-      message.timeline = message.timeline ?? []
-      const last = message.timeline[message.timeline.length - 1]
-      // 只要上一个 timeline 条目不是"进行中的推理轮"，就开新的一轮
-      if (!last || last.type !== 'reasoning') {
-        message.timeline.push({
-          id: `reasoning-${message.timeline.length}`,
-          type: 'reasoning',
-          content: delta
-        })
-      } else {
-        last.content = (last.content || '') + delta
-      }
-    },
-    []
-  )
-
-  const upsertToolCallInTimeline = useCallback(
-    (message: ChatMessage, toolCall: ToolCall) => {
-      message.timeline = message.timeline ?? []
-      const toolCallId =
-        toolCall.tool_call_id || `${toolCall.tool_name}-${toolCall.created_at}`
-      const idx = message.timeline.findIndex(
-        (step) =>
-          step.type === 'tool_call' &&
-          ((step.tool?.tool_call_id &&
-            step.tool.tool_call_id === toolCall.tool_call_id) ||
-            (!step.tool?.tool_call_id &&
-              `${step.tool?.tool_name}-${step.tool?.created_at}` === toolCallId))
-      )
-      if (idx >= 0) {
-        message.timeline[idx] = {
-          ...message.timeline[idx],
-          tool: { ...message.timeline[idx].tool, ...toolCall }
-        }
-      } else {
-        message.timeline.push({
-          id: `tool-${toolCallId}`,
-          type: 'tool_call',
-          tool: toolCall
-        })
       }
     },
     []
@@ -180,12 +190,12 @@ const useAIChatStreamHandler = () => {
         role: 'agent',
         content: '',
         tool_calls: [],
+        timeline: [],
         streamingError: false,
         created_at: Math.floor(Date.now() / 1000) + 1
       })
 
       let lastContent = ''
-      let lastReasoningContent = ''
       let newSessionId = sessionId
       try {
         const endpointUrl = constructEndpointUrl(selectedEndpoint)
@@ -250,17 +260,25 @@ const useAIChatStreamHandler = () => {
                 })
               }
             } else if (
+              // *** 修复点：真正的 ToolCallStarted / ToolCallCompleted 事件分支 ***
+              // 这里才是每次工具调用真实到达的地方，timeline 的更新必须放在这里。
               chunk.event === RunEvent.ToolCallStarted ||
               chunk.event === RunEvent.TeamToolCallStarted ||
               chunk.event === RunEvent.ToolCallCompleted ||
-              chunk.event === RunEvent.TeamToolCallCompleted
+              chunk.event === RunEvent.TeamToolCallCompleted ||
+              chunk.event === RunEvent.ToolCallError
             ) {
               setMessages((prevMessages) => {
                 const newMessages = [...prevMessages]
                 const lastMessage = newMessages[newMessages.length - 1]
-                if (lastMessage && lastMessage.role === 'agent' && chunk.tool) {
-                  lastMessage.tool_calls = processToolCall(chunk.tool, lastMessage.tool_calls)
-                  upsertToolCallInTimeline(lastMessage, chunk.tool)   // 新增
+                if (lastMessage && lastMessage.role === 'agent') {
+                  lastMessage.tool_calls = processChunkToolCalls(
+                    chunk,
+                    lastMessage.tool_calls
+                  )
+                  if (chunk.tool) {
+                    upsertToolCallInTimeline(lastMessage, chunk.tool)
+                  }
                 }
                 return newMessages
               })
@@ -287,18 +305,26 @@ const useAIChatStreamHandler = () => {
                   lastContent = jsonBlock
                 }
 
-                // --- reasoning_content：不再依赖 chunk.content 是否为字符串 ---
+                // --- reasoning_content：按轮次写入 timeline，不再依赖 chunk.content 类型 ---
                 if (chunk.reasoning_content) {
                   lastMessage.reasoning_content =
-                    (lastMessage.reasoning_content || '') + chunk.reasoning_content  // 保留原字段，兼容/调试用
-                  appendReasoningToTimeline(lastMessage, chunk.reasoning_content)      // 新增，真正驱动渲染
+                    (lastMessage.reasoning_content || '') +
+                    chunk.reasoning_content
+                  appendReasoningToTimeline(
+                    lastMessage,
+                    chunk.reasoning_content
+                  )
                 }
 
-                // --- tool_calls：同样解耦 ---
+                // --- tool_calls：如果 tool 信息是内嵌在 RunContent chunk 里下发的，
+                //     同样要写入 timeline，保持和上面 ToolCallStarted 分支逻辑一致 ---
                 lastMessage.tool_calls = processChunkToolCalls(
                   chunk,
                   lastMessage.tool_calls
                 )
+                if (chunk.tool) {
+                  upsertToolCallInTimeline(lastMessage, chunk.tool)
+                }
 
                 if (chunk.extra_data?.reasoning_steps) {
                   lastMessage.extra_data = {
@@ -313,7 +339,10 @@ const useAIChatStreamHandler = () => {
                   }
                 }
 
-                lastMessage.created_at = chunk.created_at ?? lastMessage.created_at
+                // 注意：这里故意不再用 chunk.created_at 覆盖 lastMessage.created_at。
+                // 如果消息列表用 created_at 当 React key，每个 chunk 都改它会导致
+                // 组件被判定为"新消息"而整体重新挂载，ThinkBlock/ToolCallCard 内部
+                // 的展开/折叠状态会被强制重置。created_at 只在消息创建时设置一次即可。
                 if (chunk.images) lastMessage.images = chunk.images
                 if (chunk.videos) lastMessage.videos = chunk.videos
                 if (chunk.audio) lastMessage.audio = chunk.audio
@@ -326,7 +355,9 @@ const useAIChatStreamHandler = () => {
                   const transcript = chunk.response_audio.transcript
                   lastMessage.response_audio = {
                     ...lastMessage.response_audio,
-                    transcript: (lastMessage.response_audio?.transcript || '') + transcript
+                    transcript:
+                      (lastMessage.response_audio?.transcript || '') +
+                      transcript
                   }
                 }
 
@@ -410,6 +441,9 @@ const useAIChatStreamHandler = () => {
                       content: updatedContent,
                       reasoning_content:
                         chunk.reasoning_content ?? message.reasoning_content,
+                      // timeline 是流式过程中逐步搭建起来的真实顺序记录，
+                      // RunCompleted 时不应该用某个汇总字段覆盖掉它，保留原样即可。
+                      timeline: message.timeline,
                       tool_calls: processChunkToolCalls(
                         chunk,
                         message.tool_calls
@@ -438,7 +472,7 @@ const useAIChatStreamHandler = () => {
             updateMessagesWithErrorState()
             setStreamingErrorMessage(error.message)
           },
-          onComplete: () => { }
+          onComplete: () => {}
         })
       } catch (error) {
         updateMessagesWithErrorState()
@@ -466,7 +500,9 @@ const useAIChatStreamHandler = () => {
       setSessionsData,
       sessionId,
       setSessionId,
-      processChunkToolCalls
+      processChunkToolCalls,
+      appendReasoningToTimeline,
+      upsertToolCallInTimeline
     ]
   )
 

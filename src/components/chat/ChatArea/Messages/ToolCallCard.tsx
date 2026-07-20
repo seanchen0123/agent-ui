@@ -24,7 +24,7 @@ const ToolCallCard = ({ tool, index }: ToolCallCardProps) => {
   }
 
   const formatResult = () => {
-    if (!tool.result) return 'No result'
+    if (tool.result === undefined || tool.result === null) return 'No result'
     if (typeof tool.result === 'string') {
       try {
         const parsed = JSON.parse(tool.result)
@@ -41,8 +41,13 @@ const ToolCallCard = ({ tool, index }: ToolCallCardProps) => {
     : ''
 
   const getStatus = () => {
-    if (!tool.result && !tool.tool_call_error) return 'loading'
-    if (tool.tool_call_error) return 'error'
+    // tool_call_error 是明确的布尔值时，直接采信它，不再用 result 是否为空去猜：
+    // 历史数据里 result 本身也可能是空字符串/falsy 值，不代表调用还没完成。
+    if (tool.tool_call_error === true) return 'error'
+    if (tool.tool_call_error === false) return 'success'
+    // tool_call_error 是 undefined/null，说明这是真正的直播流式调用，
+    // 结果还没回来，才应该显示 loading。
+    if (tool.result === undefined || tool.result === null) return 'loading'
     return 'success'
   }
 

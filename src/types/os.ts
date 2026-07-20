@@ -100,6 +100,7 @@ export enum RunEvent {
   UpdatingMemory = 'UpdatingMemory',
   ToolCallStarted = 'ToolCallStarted',
   ToolCallCompleted = 'ToolCallCompleted',
+  ToolCallError = 'ToolCallError',
   MemoryUpdateStarted = 'MemoryUpdateStarted',
   MemoryUpdateCompleted = 'MemoryUpdateCompleted',
   ReasoningStarted = 'ReasoningStarted',

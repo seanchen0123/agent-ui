@@ -117,21 +117,25 @@ const parseTimeline = (message: ChatMessage): TimelineItem[] => {
 const AgentMessage = ({ message }: MessageProps) => {
   const { streamingErrorMessage, isStreaming } = useStore()
   let messageContent
-  if (message.streamingError) {
-    messageContent = (
-      <p className="text-destructive">
-        Oops! Something went wrong while streaming.{' '}
-        {streamingErrorMessage ? (
-          <>{streamingErrorMessage}</>
-        ) : (
-          'Please try refreshing the page or try again later.'
-        )}
-      </p>
-    )
-  } else if (
-    message.content ||
-    (message.timeline && message.timeline.length > 0)
-  ) {
+
+  const errorNotice = (
+    <p className="text-destructive">
+      Oops! Something went wrong while streaming.{' '}
+      {streamingErrorMessage ? (
+        <>{streamingErrorMessage}</>
+      ) : (
+        'Please try refreshing the page or try again later.'
+      )}
+    </p>
+  )
+
+  const hasContent =
+    message.content || (message.timeline && message.timeline.length > 0)
+
+  if (!hasContent && message.streamingError) {
+    // 出错前完全没攒下任何内容（思考/工具调用都还没开始），只能展示纯错误提示
+    messageContent = errorNotice
+  } else if (hasContent) {
     const timeline = parseTimeline(message)
 
     const renderTimelineItem = (item: TimelineItem, position: number) => {
@@ -177,6 +181,9 @@ const AgentMessage = ({ message }: MessageProps) => {
         ) : (
           <MarkdownRenderer>{message.content}</MarkdownRenderer>
         )}
+        {/* 出错时不再把已经攒下的思考/工具调用链路整个丢掉，
+            而是把错误提示追加展示在它下面 */}
+        {message.streamingError && errorNotice}
         {message.videos && message.videos.length > 0 && (
           <Videos videos={message.videos} />
         )}
