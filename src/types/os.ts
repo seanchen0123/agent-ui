@@ -1,9 +1,17 @@
-export interface TimelineStep {
-  id: string
-  type: 'reasoning' | 'tool_call'
-  content?: string   // reasoning 用
-  tool?: ToolCall    // tool_call 用
-}
+export type TimelineStep =
+  | { id: string; type: 'reasoning'; content: string }
+  | { id: string; type: 'tool_call'; tool: ToolCall }
+  | {
+      id: string
+      type: 'member_run'
+      agentId?: string
+      agentName?: string
+      runId: string
+      task?: string
+      content?: string
+      timeline: TimelineStep[]
+      status?: 'running' | 'completed' | 'error'
+    }
 
 export interface ToolCall {
   role: 'user' | 'tool' | 'system' | 'assistant'
@@ -17,6 +25,7 @@ export interface ToolCall {
     time: number
   }
   created_at: number
+  child_run_id?: string
 }
 
 export interface ReasoningSteps {
@@ -169,6 +178,7 @@ export interface RunResponse {
   metrics?: object
   model?: string
   run_id?: string
+  parent_run_id?: string
   agent_id?: string
   session_id?: string
   tool?: ToolCall

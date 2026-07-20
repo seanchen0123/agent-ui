@@ -9,7 +9,7 @@ import {
   ChatEntry,
   TimelineStep
 } from '@/types/os'
-import { getJsonMarkdown } from '@/lib/utils'
+import { getJsonMarkdown, parseThinkSegments } from '@/lib/utils'
 
 interface SessionResponse {
   session_id: string
@@ -50,9 +50,15 @@ interface RunMessage {
   created_at?: number
 }
 
-// ChatEntry 类型目前没有声明 tools / messages 字段（后端实际返回了，只是类型没跟上），
-// 统一用这个扩展类型做断言，避免到处写 `as unknown as {...}`
+// ChatEntry 类型目前没有声明 tools / messages / parent_run_id / run_id / agent_name 字段
+// （后端实际返回了，只是类型没跟上），统一用这个扩展类型做断言
 type RunEntry = ChatEntry & {
+  run_id?: string
+  parent_run_id?: string
+  agent_id?: string
+  agent_name?: string
+  content?: string | object
+  status?: string
   tools?: ToolCall[]
   messages?: RunMessage[]
 }
@@ -78,14 +84,18 @@ const safeParseToolArgs = (args: unknown): Record<string, unknown> => {
  * "这一轮"自己的 reasoning_content，紧跟着这一轮的 tool_calls，顺序天然正确，
  * 这才是能还原 timeline 的数据源。
  *
- * 工具调用的完整信息（result / tool_call_error / metrics）优先从 run.tools
- * 里按 tool_call_id 取，因为 messages 里的 tool_calls 只是原始请求参数，
- * 没有执行结果。
+ * Team 模式下，委派工具与对应的 member_run 都要保留：工具卡片固定在发起
+ * 委派的真实位置，紧随其后的 member_run 递归展示子 agent 的完整执行过程。
  */
-const buildTimelineFromRun = (run: ChatEntry): TimelineStep[] => {
+const buildTimelineFromRun = (
+  run: RunEntry,
+  runsById: Map<string, RunEntry>,
+  childRunsByParentId: Map<string, RunEntry[]>,
+  usedMemberRunIds = new Set<string>()
+): TimelineStep[] => {
   const timeline: TimelineStep[] = []
 
-  const r = run as RunEntry
+  const r = run
   const rawMessages = r.messages ?? []
   const toolCallsFlat: ToolCall[] = r.tools ?? []
   const toolCallById = new Map(
@@ -98,14 +108,97 @@ const buildTimelineFromRun = (run: ChatEntry): TimelineStep[] => {
   // 就按 run.tools 数组里出现的顺序对应下一条，避免 result / tool_call_error 数据丢失
   let toolCallCursor = 0
 
+  const addReasoning = (content: string, id: string) => {
+    if (!content.trim()) return
+    timeline.push({ id: `reasoning-${id}`, type: 'reasoning', content })
+  }
+
+  const findChildRun = (
+    rawToolCall: RunToolCallRef,
+    fullTool: ToolCall | undefined
+  ) => {
+    const toolArgs =
+      fullTool?.tool_args ?? safeParseToolArgs(rawToolCall.function?.arguments)
+    const memberId =
+      typeof toolArgs.member_id === 'string' ? toolArgs.member_id : undefined
+    const children = r.run_id ? (childRunsByParentId.get(r.run_id) ?? []) : []
+    const childRunId = fullTool?.child_run_id
+      ? String(fullTool.child_run_id)
+      : undefined
+    const childFromTool = childRunId ? runsById.get(childRunId) : undefined
+    const isDelegation =
+      (fullTool?.tool_name ?? rawToolCall.function?.name) ===
+      'delegate_task_to_member'
+
+    // 部分历史记录的 child_run_id 会被后续委派覆盖。member_id 与
+    // parent_run_id 一起才能稳定确定真正的子 agent run。
+    if (
+      childFromTool &&
+      childFromTool.parent_run_id === r.run_id &&
+      !usedMemberRunIds.has(childFromTool.run_id ?? '') &&
+      (!memberId || childFromTool.agent_id === memberId)
+    ) {
+      return childFromTool
+    }
+
+    if (!isDelegation) return undefined
+
+    return children.find(
+      (child) =>
+        !usedMemberRunIds.has(child.run_id ?? '') &&
+        (!memberId || child.agent_id === memberId)
+    )
+  }
+
+  const addToolAndMember = (
+    rawToolCall: RunToolCallRef,
+    fullTool: ToolCall | undefined,
+    fallbackId: string,
+    createdAt?: number
+  ) => {
+    const toolCallId = rawToolCall.id ? String(rawToolCall.id) : undefined
+    const tool =
+      fullTool ??
+      ({
+        tool_call_id: toolCallId ?? '',
+        tool_name: rawToolCall.function?.name ?? '',
+        tool_args: safeParseToolArgs(rawToolCall.function?.arguments),
+        created_at: createdAt
+      } as ToolCall)
+
+    timeline.push({
+      id: `tool-${toolCallId ?? fallbackId}`,
+      type: 'tool_call',
+      tool
+    })
+
+    const childRun = findChildRun(rawToolCall, fullTool)
+    if (!childRun?.run_id) return
+
+    usedMemberRunIds.add(childRun.run_id)
+    timeline.push({
+      id: `member-${childRun.run_id}`,
+      type: 'member_run',
+      agentId: childRun.agent_id,
+      agentName: childRun.agent_name,
+      runId: childRun.run_id,
+      task: (tool.tool_args?.task as string | undefined) ?? undefined,
+      content: typeof childRun.content === 'string' ? childRun.content : '',
+      timeline: buildTimelineFromRun(childRun, runsById, childRunsByParentId),
+      status: childRun.status === 'ERROR' ? 'error' : 'completed'
+    })
+  }
+
   rawMessages.forEach((msg, msgIndex) => {
     if (msg.role !== 'assistant') return
 
-    if (msg.reasoning_content) {
-      timeline.push({
-        id: `reasoning-${msg.id ?? msgIndex}`,
-        type: 'reasoning',
-        content: msg.reasoning_content
+    if (msg.reasoning_content?.trim()) {
+      addReasoning(msg.reasoning_content, msg.id ?? String(msgIndex))
+    } else if (typeof msg.content === 'string') {
+      parseThinkSegments(msg.content).forEach((segment, segmentIndex) => {
+        if (segment.type === 'think') {
+          addReasoning(segment.content, `${msg.id ?? msgIndex}-${segmentIndex}`)
+        }
       })
     }
 
@@ -125,18 +218,12 @@ const buildTimelineFromRun = (run: ChatEntry): TimelineStep[] => {
           usedToolCallIds.add(toolCallId)
         }
 
-        timeline.push({
-          id: `tool-${toolCallId ?? `${msgIndex}-${tcIndex}`}`,
-          type: 'tool_call',
-          tool:
-            fullTool ??
-            ({
-              tool_call_id: toolCallId ?? '',
-              tool_name: rawToolCall.function?.name ?? '',
-              tool_args: safeParseToolArgs(rawToolCall.function?.arguments),
-              created_at: msg.created_at
-            } as ToolCall)
-        })
+        addToolAndMember(
+          rawToolCall,
+          fullTool,
+          `${msgIndex}-${tcIndex}`,
+          msg.created_at
+        )
       })
     }
   })
@@ -145,11 +232,18 @@ const buildTimelineFromRun = (run: ChatEntry): TimelineStep[] => {
   // 追加在末尾，至少不丢信息（不影响正常情况下的顺序）
   toolCallsFlat.forEach((tc) => {
     if (tc.tool_call_id && !usedToolCallIds.has(String(tc.tool_call_id))) {
-      timeline.push({
-        id: `tool-${tc.tool_call_id}`,
-        type: 'tool_call',
-        tool: tc
-      })
+      addToolAndMember(
+        {
+          id: tc.tool_call_id,
+          function: {
+            name: tc.tool_name,
+            arguments: JSON.stringify(tc.tool_args)
+          }
+        },
+        tc,
+        tc.tool_call_id,
+        tc.created_at
+      )
     }
   })
 
@@ -215,8 +309,31 @@ const useSessionLoader = () => {
         )
         if (response) {
           if (Array.isArray(response)) {
+            // 建立 run_id 索引与 parent_run_id 分组。child_run_id 在历史数据中
+            // 可能被覆盖，回填时需要两者交叉校验才能找对成员运行记录。
+            const runsById = new Map<string, RunEntry>()
+            const childRunsByParentId = new Map<string, RunEntry[]>()
+            response.forEach((run) => {
+              const r = run as RunEntry
+              if (r?.run_id) runsById.set(r.run_id, r)
+              if (r?.run_id && r.parent_run_id) {
+                const children = childRunsByParentId.get(r.parent_run_id) ?? []
+                children.push(r)
+                childRunsByParentId.set(r.parent_run_id, children)
+              }
+            })
+
             const messagesFor = response.flatMap((run) => {
               const filteredMessages: ChatMessage[] = []
+              const r = run as RunEntry
+
+              // *** 关键修复：带 parent_run_id 的 run 是 Team 委派出去的成员 agent
+              // 自己的 run，不应该单独渲染成一条对话消息（否则会出现重复的
+              // user 气泡）。它会在其父 run 的 timeline 里被折叠成一个
+              // member_run 节点，这里直接跳过。 ***
+              if (r?.parent_run_id) {
+                return filteredMessages
+              }
 
               if (run) {
                 filteredMessages.push({
@@ -227,7 +344,6 @@ const useSessionLoader = () => {
               }
 
               if (run) {
-                const r = run as RunEntry
                 const toolCalls = [
                   ...(r.tools ?? []),
                   ...(run.extra_data?.reasoning_messages ?? []).reduce(
@@ -251,11 +367,15 @@ const useSessionLoader = () => {
                   )
                 ]
 
-                // 关键新增：从 run.messages 重建 timeline，
-                // reasoning_content 模式靠它还原思考轮次+工具调用的真实顺序；
-                // <think> 内联模式下这里会构建出"零个 reasoning 条目"，
-                // MessageItem.tsx 会据此自动回退到老的内联解析逻辑，互不影响。
-                const timeline = buildTimelineFromRun(run)
+                // 从 run.messages 重建 timeline：
+                // - reasoning_content 模式靠它还原思考轮次+工具调用的真实顺序；
+                // - <think> 内联模式同样会逐段转成 reasoning timeline；
+                // - Team 模式下，委派工具会保留，并在其后插入对应的 member_run 节点。
+                const timeline = buildTimelineFromRun(
+                  r,
+                  runsById,
+                  childRunsByParentId
+                )
 
                 filteredMessages.push({
                   role: 'agent',

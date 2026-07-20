@@ -1,7 +1,7 @@
 import Icon from '@/components/ui/icon'
 import MarkdownRenderer from '@/components/ui/typography/MarkdownRenderer'
 import { useStore } from '@/store'
-import type { ChatMessage, ToolCall } from '@/types/os'
+import type { ChatMessage } from '@/types/os'
 import Videos from './Multimedia/Videos'
 import Images from './Multimedia/Images'
 import Audios from './Multimedia/Audios'
@@ -9,109 +9,11 @@ import { memo } from 'react'
 import AgentThinkingLoader from './AgentThinkingLoader'
 import ThinkBlock from './ThinkBlock'
 import ToolCallCard from './ToolCallCard'
-import { parseThinkSegments } from '@/lib/utils'
+import MemberRunCard from './MemberRunCard'
+import { buildTimelineItems } from '@/lib/timelineUtils'
 
 interface MessageProps {
   message: ChatMessage
-}
-
-interface TimelineItem {
-  type: 'think' | 'tool_call' | 'text'
-  content?: string
-  tool?: ToolCall
-  index: number
-  source?: 'reasoning' | 'inline'
-}
-
-/**
- * 两种互斥的场景，分别处理：
- *
- * 1. reasoning_content 模式：后端把推理内容和正文分开下发，
- *    message.timeline 是流式过程中按真实事件顺序搭建起来的 (reasoning / tool_call 交替)，
- *    直接按它的顺序渲染即可，content 里不会再有 <think> 标签，只需要把纯文本部分接到最后。
- *
- * 2. inline <think> 标签模式：推理内容直接写在 content 字符串里，
- *    需要用 parseThinkSegments 从 content 里抠出来，
- *    并按"每遇到一个 think 段落，配一个工具调用"的顺序一一还原
- *    （工具调用的真实顺序仍然来自 message.timeline，如果没有则退回 message.tool_calls）。
- *
- * 用 message.timeline 里是否存在 'reasoning' 类型的条目来判断走哪种模式。
- */
-const parseTimeline = (message: ChatMessage): TimelineItem[] => {
-  const timeline: TimelineItem[] = []
-  const hasReasoningRounds = message.timeline?.some(
-    (step) => step.type === 'reasoning'
-  )
-
-  if (hasReasoningRounds) {
-    let thinkIndex = 0
-    let toolIndex = 0
-
-    message.timeline?.forEach((step) => {
-      if (step.type === 'reasoning') {
-        timeline.push({
-          type: 'think',
-          content: step.content || '',
-          index: thinkIndex++,
-          source: 'reasoning'
-        })
-      } else if (step.type === 'tool_call' && step.tool) {
-        timeline.push({
-          type: 'tool_call',
-          tool: step.tool,
-          index: toolIndex++
-        })
-      }
-    })
-
-    const segments = parseThinkSegments(message.content)
-    for (const segment of segments) {
-      if (segment.type === 'text' && segment.content.trim()) {
-        timeline.push({
-          type: 'text',
-          content: segment.content,
-          index: timeline.length
-        })
-      }
-    }
-  } else {
-    const toolCallsInOrder =
-      message.timeline
-        ?.filter((step) => step.type === 'tool_call' && step.tool)
-        .map((step) => step.tool!) ??
-      message.tool_calls ??
-      []
-
-    const segments = parseThinkSegments(message.content)
-    let thinkIndex = 0
-    let toolIndex = 0
-
-    for (const segment of segments) {
-      if (segment.type === 'think') {
-        timeline.push({
-          type: 'think',
-          content: segment.content,
-          index: thinkIndex++,
-          source: 'inline'
-        })
-        if (toolIndex < toolCallsInOrder.length) {
-          timeline.push({
-            type: 'tool_call',
-            tool: toolCallsInOrder[toolIndex],
-            index: toolIndex++
-          })
-        }
-      } else if (segment.content.trim()) {
-        timeline.push({
-          type: 'text',
-          content: segment.content,
-          index: timeline.length
-        })
-      }
-    }
-  }
-
-  return timeline
 }
 
 const AgentMessage = ({ message }: MessageProps) => {
@@ -136,9 +38,16 @@ const AgentMessage = ({ message }: MessageProps) => {
     // 出错前完全没攒下任何内容（思考/工具调用都还没开始），只能展示纯错误提示
     messageContent = errorNotice
   } else if (hasContent) {
-    const timeline = parseTimeline(message)
+    const timeline = buildTimelineItems(
+      message.content,
+      message.timeline,
+      message.tool_calls
+    )
 
-    const renderTimelineItem = (item: TimelineItem, position: number) => {
+    const renderTimelineItem = (
+      item: ReturnType<typeof buildTimelineItems>[number],
+      position: number
+    ) => {
       switch (item.type) {
         case 'think':
           return (
@@ -156,6 +65,14 @@ const AgentMessage = ({ message }: MessageProps) => {
             <ToolCallCard
               key={`tool-${item.index}`}
               tool={item.tool!}
+              index={item.index}
+            />
+          )
+        case 'member_run':
+          return (
+            <MemberRunCard
+              key={`member-${item.memberStep!.runId}`}
+              memberStep={item.memberStep!}
               index={item.index}
             />
           )
