@@ -208,6 +208,7 @@ const SidebarContent = ({
     mode
   } = useStore()
   const [isMounted, setIsMounted] = useState(false)
+  const [isConfigExpanded, setIsConfigExpanded] = useState(true)
   const [agentId] = useQueryState('agent')
   const [teamId] = useQueryState('team')
 
@@ -224,7 +225,7 @@ const SidebarContent = ({
 
   return (
     <motion.div
-      className="w-60 space-y-5"
+      className="flex flex-col h-full w-60"
       initial={{ opacity: 0, x: -20 }}
       animate={{ opacity: isCollapsed ? 0 : 1, x: isCollapsed ? -20 : 0 }}
       transition={{ duration: 0.3, ease: 'easeInOut' }}
@@ -232,50 +233,79 @@ const SidebarContent = ({
         pointerEvents: isCollapsed ? 'none' : 'auto'
       }}
     >
-      <SidebarHeader />
-      <NewChatButton
-        disabled={messages.length === 0}
-        onClick={handleNewChat}
-      />
-      {isMounted && (
-        <>
-          <Endpoint />
-          <AuthToken hasEnvToken={hasEnvToken} envToken={envToken} />
-          {isEndpointActive && (
-            <>
-              <motion.div
-                className="flex w-full flex-col items-start gap-2"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ duration: 0.5, ease: 'easeInOut' }}
+      <div className="space-y-5">
+        <SidebarHeader />
+        <NewChatButton
+          disabled={messages.length === 0}
+          onClick={handleNewChat}
+        />
+        {isMounted && (
+          <>
+            <motion.div
+              className="overflow-hidden"
+              initial={{ height: 'auto' }}
+              animate={{
+                height: isConfigExpanded ? 'auto' : '32px'
+              }}
+              transition={{ duration: 0.3, ease: 'easeInOut' }}
+            >
+              <button
+                onClick={() => setIsConfigExpanded(!isConfigExpanded)}
+                className="flex w-full items-center justify-between py-2 text-left"
               >
-                <div className="text-xs font-medium uppercase text-primary">
-                  Mode
-                </div>
-                {isEndpointLoading ? (
-                  <div className="flex w-full flex-col gap-2">
-                    {Array.from({ length: 3 }).map((_, index) => (
-                      <Skeleton
-                        key={index}
-                        className="h-9 w-full rounded-xl"
-                      />
-                    ))}
-                  </div>
-                ) : (
-                  <>
-                    <ModeSelector />
-                    <EntitySelector />
-                    {selectedModel && (agentId || teamId) && (
-                      <ModelDisplay model={selectedModel} />
+                <span className="text-xs font-medium uppercase text-primary">
+                  Config
+                </span>
+                <motion.div
+                  animate={{ rotate: isConfigExpanded ? 180 : 0 }}
+                  transition={{ duration: 0.3, ease: 'easeInOut' }}
+                >
+                  <Icon type="chevron-up" size="xs" className="text-secondary" />
+                </motion.div>
+              </button>
+              <div className="space-y-5 pl-3">
+                <Endpoint />
+                <AuthToken hasEnvToken={hasEnvToken} envToken={envToken} />
+                {isEndpointActive && (
+                  <motion.div
+                    className="flex w-full flex-col items-start gap-2"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ duration: 0.5, ease: 'easeInOut' }}
+                  >
+                    <div className="text-xs font-medium uppercase text-primary">
+                      Mode
+                    </div>
+                    {isEndpointLoading ? (
+                      <div className="flex w-full flex-col gap-2">
+                        {Array.from({ length: 3 }).map((_, index) => (
+                          <Skeleton
+                            key={index}
+                            className="h-9 w-full rounded-xl"
+                          />
+                        ))}
+                      </div>
+                    ) : (
+                      <>
+                        <ModeSelector />
+                        <EntitySelector />
+                        {selectedModel && (agentId || teamId) && (
+                          <ModelDisplay model={selectedModel} />
+                        )}
+                      </>
                     )}
-                  </>
+                  </motion.div>
                 )}
-              </motion.div>
-              <Sessions onSessionSelect={onCloseMobileSidebar} />
-            </>
-          )}
-        </>
-      )}
+              </div>
+            </motion.div>
+          </>
+        )}
+      </div>
+      <div className="flex-1 overflow-hidden min-h-0 mt-4">
+        {isMounted && isEndpointActive && (
+          <Sessions onSessionSelect={onCloseMobileSidebar} />
+        )}
+      </div>
     </motion.div>
   )
 }

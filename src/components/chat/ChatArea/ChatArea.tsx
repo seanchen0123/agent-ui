@@ -7,8 +7,8 @@ import ThemeToggle from '@/components/ui/ThemeToggle'
 
 const ChatArea = ({ onMobileMenuClick }: { onMobileMenuClick?: () => void }) => {
   return (
-    <main className="relative m-1.5 flex flex-grow flex-col rounded-xl bg-background border-box">
-      <div className="flex items-center justify-between md:px-4 pb-1 border-b border-accent/50">
+    <main className="relative flex flex-grow flex-col bg-background border-box overflow-hidden">
+      <div className="flex items-center justify-between md:px-4 px-2 pb-1 border-b border-accent/50">
         <button
           onClick={onMobileMenuClick}
           className="md:hidden p-2 hover:bg-accent rounded-lg transition-colors"

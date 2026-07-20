@@ -88,7 +88,7 @@ const AgentMessage = ({ message }: MessageProps) => {
     }
 
     messageContent = (
-      <div className="flex w-full flex-col gap-4">
+      <div className="flex w-full flex-col gap-4 min-w-0">
         {timeline.length > 0 ? (
           <div className="flex flex-col gap-4">
             {timeline.map((item, position) =>
@@ -121,7 +121,7 @@ const AgentMessage = ({ message }: MessageProps) => {
       )
     } else {
       messageContent = (
-        <div className="flex w-full flex-col gap-4">
+        <div className="flex w-full flex-col gap-4 min-w-0">
           <MarkdownRenderer>
             {message.response_audio.transcript}
           </MarkdownRenderer>

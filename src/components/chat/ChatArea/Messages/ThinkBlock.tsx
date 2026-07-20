@@ -52,10 +52,10 @@ const ThinkBlock = ({ content, index, isStreaming }: ThinkBlockProps) => {
       <div
         className={cn(
           'overflow-hidden transition-all duration-300',
-          isExpanded ? 'max-h-[1000px] opacity-100' : 'max-h-0 opacity-0'
+          isExpanded ? 'max-h-[400px] opacity-100' : 'max-h-0 opacity-0'
         )}
       >
-        <div className="px-4 pb-4 pt-2">
+        <div className="max-h-[400px] overflow-y-auto px-4 pb-4 pt-2">
           <MarkdownRenderer>{content}</MarkdownRenderer>
         </div>
       </div>

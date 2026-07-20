@@ -68,7 +68,7 @@ const ToolCallCard = ({ tool, index }: ToolCallCardProps) => {
           isExpanded ? 'border-border/30 border-b' : ''
         )}
       >
-        <div className="flex items-center gap-3">
+        <div className="flex min-w-0 items-center gap-3">
           <Icon
             type={isExpanded ? 'chevron-up' : 'chevron-down'}
             size="xs"
@@ -77,17 +77,19 @@ const ToolCallCard = ({ tool, index }: ToolCallCardProps) => {
           <Icon
             type="hammer"
             size="xs"
-            className="text-primary/80 flex-shrink-0"
+            className="hidden sm:block text-primary/80 flex-shrink-0"
           />
-          <span className="text-secondary text-xs font-semibold uppercase">
-            Tool Call {index + 1}
-          </span>
-          <span className="font-dmmono text-primary/80 text-xs">
-            {tool.tool_name}
-            {duration}
-          </span>
+          <div className='flex flex-col sm:flex-row sm:gap-3 flex-1 min-w-0'>
+            <span className="text-secondary text-xs font-semibold uppercase">
+              Tool Call {index + 1}
+            </span>
+            <span className="font-dmmono text-primary/80 text-xs truncate">
+              {tool.tool_name}
+              {duration}
+            </span>
+          </div>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex flex-shrink-0 items-center gap-1">
           {status === 'loading' && (
             <>
               <span className="bg-primary inline-block h-1.5 w-1.5 animate-pulse rounded-full" />
@@ -111,10 +113,10 @@ const ToolCallCard = ({ tool, index }: ToolCallCardProps) => {
       <div
         className={cn(
           'overflow-hidden transition-all duration-300',
-          isExpanded ? 'max-h-[2000px] opacity-100' : 'max-h-0 opacity-0'
+          isExpanded ? 'max-h-[400px] opacity-100' : 'max-h-0 opacity-0'
         )}
       >
-        <div className="space-y-4 px-4 pb-4 pt-2">
+        <div className="max-h-[400px] overflow-y-auto space-y-4 px-4 pb-4 pt-2">
           <div>
             <p className="text-secondary mb-2 text-xs font-semibold uppercase">
               Arguments
