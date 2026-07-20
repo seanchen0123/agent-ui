@@ -54,7 +54,7 @@ const MemberRunCard = ({ memberStep, index }: MemberRunCardProps) => {
           <Icon
             type="agent"
             size="xs"
-            className="text-primary/80 flex-shrink-0"
+            className="hidden sm:block text-primary/80 flex-shrink-0"
           />
           <span className="text-secondary text-xs font-semibold uppercase">
             Agent
@@ -86,11 +86,12 @@ const MemberRunCard = ({ memberStep, index }: MemberRunCardProps) => {
       </button>
       <div
         className={cn(
-          'overflow-hidden transition-all duration-300',
-          isExpanded ? 'max-h-[100000px] opacity-100' : 'max-h-0 opacity-0'
+          'grid transition-all duration-300',
+          isExpanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'
         )}
       >
-        <div className="flex flex-col gap-4 px-4 pb-4 pt-3">
+        <div className="overflow-hidden">
+          <div className="flex flex-col gap-4 px-4 pb-4 pt-3">
           {memberStep.task && (
             <div>
               <p className="text-secondary mb-2 text-xs font-semibold uppercase">
@@ -149,6 +150,7 @@ const MemberRunCard = ({ memberStep, index }: MemberRunCardProps) => {
           {items.length === 0 && memberStep.content && (
             <MarkdownRenderer>{memberStep.content}</MarkdownRenderer>
           )}
+          </div>
         </div>
       </div>
     </div>

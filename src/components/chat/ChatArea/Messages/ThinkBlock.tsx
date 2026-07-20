@@ -51,12 +51,14 @@ const ThinkBlock = ({ content, index, isStreaming }: ThinkBlockProps) => {
       </button>
       <div
         className={cn(
-          'overflow-hidden transition-all duration-300',
-          isExpanded ? 'max-h-[400px] opacity-100' : 'max-h-0 opacity-0'
+          'grid transition-all duration-300',
+          isExpanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'
         )}
       >
-        <div className="max-h-[400px] overflow-y-auto px-4 pb-4 pt-2">
-          <MarkdownRenderer>{content}</MarkdownRenderer>
+        <div className="overflow-hidden">
+          <div className="max-h-[400px] overflow-y-auto px-4 pb-4 pt-2">
+            <MarkdownRenderer>{content}</MarkdownRenderer>
+          </div>
         </div>
       </div>
     </div>

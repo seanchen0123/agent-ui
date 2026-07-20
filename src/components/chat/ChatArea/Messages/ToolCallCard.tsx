@@ -112,26 +112,28 @@ const ToolCallCard = ({ tool, index }: ToolCallCardProps) => {
       </button>
       <div
         className={cn(
-          'overflow-hidden transition-all duration-300',
-          isExpanded ? 'max-h-[400px] opacity-100' : 'max-h-0 opacity-0'
+          'grid transition-all duration-300',
+          isExpanded ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'
         )}
       >
-        <div className="max-h-[400px] overflow-y-auto space-y-4 px-4 pb-4 pt-2">
-          <div>
-            <p className="text-secondary mb-2 text-xs font-semibold uppercase">
-              Arguments
-            </p>
-            <pre className="font-dmmono bg-background overflow-x-auto rounded-md p-3 text-xs">
-              {formatArgs()}
-            </pre>
-          </div>
-          <div>
-            <p className="text-secondary mb-2 text-xs font-semibold uppercase">
-              Result
-            </p>
-            <pre className="font-dmmono bg-background overflow-x-auto rounded-md p-3 text-xs">
-              {formatResult()}
-            </pre>
+        <div className="overflow-hidden">
+          <div className="max-h-[400px] overflow-y-auto space-y-4 px-4 pb-4 pt-2">
+            <div>
+              <p className="text-secondary mb-2 text-xs font-semibold uppercase">
+                Arguments
+              </p>
+              <pre className="font-dmmono bg-background overflow-x-auto rounded-md p-3 text-xs">
+                {formatArgs()}
+              </pre>
+            </div>
+            <div>
+              <p className="text-secondary mb-2 text-xs font-semibold uppercase">
+                Result
+              </p>
+              <pre className="font-dmmono bg-background overflow-x-auto rounded-md p-3 text-xs">
+                {formatResult()}
+              </pre>
+            </div>
           </div>
         </div>
       </div>
