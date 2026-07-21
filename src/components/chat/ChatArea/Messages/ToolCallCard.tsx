@@ -12,6 +12,16 @@ interface ToolCallCardProps {
   isLast?: boolean
 }
 
+type ToolStatusChecker = (tool: ToolCall) => 'success' | 'error' | null
+
+const toolStatusCheckers: Record<string, ToolStatusChecker> = {
+  run_sql_query: (tool) => {
+    if (tool.result === undefined || tool.result === null) return null
+    const resultString = typeof tool.result === 'string' ? tool.result : JSON.stringify(tool.result)
+    return resultString.includes('Error running') ? 'error' : 'success'
+  }
+}
+
 const ToolCallCard = ({ tool, index, isLast }: ToolCallCardProps) => {
   const [isExpanded, setIsExpanded] = useState(false)
 
@@ -42,12 +52,14 @@ const ToolCallCard = ({ tool, index, isLast }: ToolCallCardProps) => {
     : ''
 
   const getStatus = () => {
-    // tool_call_error 是明确的布尔值时，直接采信它，不再用 result 是否为空去猜：
-    // 历史数据里 result 本身也可能是空字符串/falsy 值，不代表调用还没完成。
+    const statusChecker = toolStatusCheckers[tool.tool_name]
+    if (statusChecker) {
+      const customStatus = statusChecker(tool)
+      if (customStatus !== null) return customStatus
+    }
+
     if (tool.tool_call_error === true) return 'error'
     if (tool.tool_call_error === false) return 'success'
-    // tool_call_error 是 undefined/null，说明这是真正的直播流式调用，
-    // 结果还没回来，才应该显示 loading。
     if (tool.result === undefined || tool.result === null) return 'loading'
     return 'success'
   }
