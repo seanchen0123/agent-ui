@@ -44,10 +44,18 @@ const AgentMessage = ({ message }: MessageProps) => {
       message.tool_calls
     )
 
+    const lastCardIndex = timeline
+      .map((item, index) => (item.type === 'think' || item.type === 'tool_call' || item.type === 'member_run') ? index : -1)
+      .filter(index => index !== -1)
+      .pop()
+
     const renderTimelineItem = (
       item: ReturnType<typeof buildTimelineItems>[number],
       position: number
     ) => {
+      const isCard = item.type === 'think' || item.type === 'tool_call' || item.type === 'member_run'
+      const isLastCard = isCard && position === lastCardIndex
+
       switch (item.type) {
         case 'think':
           return (
@@ -58,6 +66,8 @@ const AgentMessage = ({ message }: MessageProps) => {
               // 只有 timeline 里最后一项才可能"正在进行中"，
               // 之前已经被工具调用打断、结束的轮次不应该再显示"思考中"动画
               isStreaming={isStreaming && position === timeline.length - 1}
+              durationMs={item.durationMs}
+              isLast={isLastCard}
             />
           )
         case 'tool_call':
@@ -66,6 +76,7 @@ const AgentMessage = ({ message }: MessageProps) => {
               key={`tool-${item.index}`}
               tool={item.tool!}
               index={item.index}
+              isLast={isLastCard}
             />
           )
         case 'member_run':
@@ -74,6 +85,7 @@ const AgentMessage = ({ message }: MessageProps) => {
               key={`member-${item.memberStep!.runId}`}
               memberStep={item.memberStep!}
               index={item.index}
+              isLast={isLastCard}
             />
           )
         case 'text':

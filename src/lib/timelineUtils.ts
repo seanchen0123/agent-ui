@@ -7,6 +7,7 @@ export interface TimelineItem {
   tool?: ToolCall
   index: number
   source?: 'reasoning' | 'inline'
+  durationMs?: number
   // member_run 专用字段
   memberStep?: Extract<TimelineStep, { type: 'member_run' }>
 }
@@ -41,7 +42,8 @@ export const buildTimelineItems = (
           type: 'think',
           content: step.content || '',
           index: thinkIndex++,
-          source: 'reasoning'
+          source: 'reasoning',
+          durationMs: step.durationMs
         })
       } else if (step.type === 'tool_call' && step.tool) {
         items.push({

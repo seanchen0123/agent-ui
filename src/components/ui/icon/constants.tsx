@@ -38,7 +38,8 @@ import {
   Trash,
   Menu,
   Sun,
-  Moon
+  Moon,
+  Sparkles
 } from 'lucide-react'
 
 import { PlusIcon } from '@radix-ui/react-icons'
@@ -81,5 +82,6 @@ export const ICONS: IconTypeMap = {
   trash: Trash,
   menu: Menu,
   sun: Sun,
-  moon: Moon
+  moon: Moon,
+  sparkles: Sparkles
 }

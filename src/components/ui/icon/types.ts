@@ -39,6 +39,7 @@ export type IconType =
   | 'menu'
   | 'sun'
   | 'moon'
+  | 'sparkles'
 
 export interface IconProps {
   type: IconType

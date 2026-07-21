@@ -82,13 +82,19 @@ const useAIChatStreamHandler = () => {
    * 开一个新的推理轮。
    */
   const appendReasoningToTimeline = useCallback(
-    (targetTimeline: TimelineStep[], delta: string) => {
+    (
+      targetTimeline: TimelineStep[],
+      delta: string,
+      timelineKey: string,
+      reasoningStartTimes: Map<string, number>
+    ) => {
       const last = targetTimeline[targetTimeline.length - 1]
       // 某些模型会单独流出 "\n"。它既不能构成一轮新的思考，
       // 也不该在工具调用之后生成一个空的 THINKING 块。
       if (!delta.trim() && (!last || last.type !== 'reasoning')) return
 
       if (!last || last.type !== 'reasoning') {
+        reasoningStartTimes.set(timelineKey, Date.now())
         targetTimeline.push({
           id: `reasoning-${targetTimeline.length}-${Date.now()}`,
           type: 'reasoning',
@@ -110,7 +116,9 @@ const useAIChatStreamHandler = () => {
     (
       targetTimeline: TimelineStep[],
       delta: string,
-      state: InlineThinkState
+      state: InlineThinkState,
+      timelineKey: string,
+      reasoningStartTimes: Map<string, number>
     ) => {
       const thinkStartTag = '<think>'
       const thinkEndTag = '</think>'
@@ -123,7 +131,7 @@ const useAIChatStreamHandler = () => {
           if (endTagIndex >= 0) {
             const reasoningDelta = text.slice(0, endTagIndex)
             if (reasoningDelta) {
-              appendReasoningToTimeline(targetTimeline, reasoningDelta)
+              appendReasoningToTimeline(targetTimeline, reasoningDelta, timelineKey, reasoningStartTimes)
             }
             state.inThink = false
             text = text.slice(endTagIndex + thinkEndTag.length)
@@ -137,11 +145,11 @@ const useAIChatStreamHandler = () => {
           ) {
             const reasoningDelta = text.slice(0, possibleTagStart)
             if (reasoningDelta) {
-              appendReasoningToTimeline(targetTimeline, reasoningDelta)
+              appendReasoningToTimeline(targetTimeline, reasoningDelta, timelineKey, reasoningStartTimes)
             }
             state.pendingTag = text.slice(possibleTagStart)
           } else {
-            appendReasoningToTimeline(targetTimeline, text)
+            appendReasoningToTimeline(targetTimeline, text, timelineKey, reasoningStartTimes)
           }
           break
         }
@@ -308,6 +316,8 @@ const useAIChatStreamHandler = () => {
       // <think> 内联模式的解析状态也需要按 run_id 隔离，否则 Team 和成员
       // agent 的标签流会互相污染，导致工具卡片延后或插入到错误位置。
       const inlineThinkStates = new Map<string, InlineThinkState>()
+      // 记录每个 timeline 的推理开始时间，用于计算思考时长
+      const reasoningStartTimes = new Map<string, number>()
       // 团队委派工具调用会在其后紧跟嵌套 RunStarted。保留这条记录只为把
       // task 传给 member_run；委派工具卡片本身必须留在原始流式位置。
       let pendingDelegate: {
@@ -464,6 +474,18 @@ const useAIChatStreamHandler = () => {
                     chunkRunId,
                     topRunId
                   )
+                  const timelineKey = chunkRunId ?? topRunId ?? '__top__'
+                  const lastTimelineItem = targetTimeline[targetTimeline.length - 1]
+                  if (
+                    lastTimelineItem &&
+                    lastTimelineItem.type === 'reasoning'
+                  ) {
+                    const startTime = reasoningStartTimes.get(timelineKey)
+                    if (startTime !== undefined) {
+                      lastTimelineItem.durationMs = Date.now() - startTime
+                      reasoningStartTimes.delete(timelineKey)
+                    }
+                  }
                   // Started 和 Completed 都按相同的 tool_call_id 合并：
                   // 这样 delegate_task_to_member 会一直停留在启动时的位置，
                   // 子 agent 完成后只更新为成功/失败状态，不会在末尾补插卡片。
@@ -519,7 +541,9 @@ const useAIChatStreamHandler = () => {
                     appendInlineThinkToTimeline(
                       targetTimeline,
                       uniqueContent,
-                      inlineThinkState
+                      inlineThinkState,
+                      runStateKey,
+                      reasoningStartTimes
                     )
                   } else if (chunk.content != null) {
                     const jsonBlock = getJsonMarkdown(chunk.content)
@@ -540,7 +564,9 @@ const useAIChatStreamHandler = () => {
                     appendInlineThinkToTimeline(
                       targetTimeline,
                       uniqueContent,
-                      inlineThinkState
+                      inlineThinkState,
+                      runStateKey,
+                      reasoningStartTimes
                     )
                   }
                 }
@@ -554,7 +580,9 @@ const useAIChatStreamHandler = () => {
                   }
                   appendReasoningToTimeline(
                     targetTimeline,
-                    chunk.reasoning_content
+                    chunk.reasoning_content,
+                    runStateKey,
+                    reasoningStartTimes
                   )
                 }
 
@@ -691,6 +719,18 @@ const useAIChatStreamHandler = () => {
                         member.content = chunk.content
                       }
                       member.status = 'completed'
+                      const timelineKey = chunkRunId
+                      const lastTimelineItem = member.timeline[member.timeline.length - 1]
+                      if (
+                        lastTimelineItem &&
+                        lastTimelineItem.type === 'reasoning'
+                      ) {
+                        const startTime = reasoningStartTimes.get(timelineKey)
+                        if (startTime !== undefined) {
+                          lastTimelineItem.durationMs = Date.now() - startTime
+                          reasoningStartTimes.delete(timelineKey)
+                        }
+                      }
                     }
                   }
                   return newMessages
@@ -712,6 +752,19 @@ const useAIChatStreamHandler = () => {
                           updatedContent = 'Error parsing response'
                         }
                       }
+                      const timeline = message.timeline ?? []
+                      const lastTimelineItem = timeline[timeline.length - 1]
+                      if (
+                        lastTimelineItem &&
+                        lastTimelineItem.type === 'reasoning'
+                      ) {
+                        const timelineKey = chunkRunId ?? topRunId ?? '__top__'
+                        const startTime = reasoningStartTimes.get(timelineKey)
+                        if (startTime !== undefined) {
+                          lastTimelineItem.durationMs = Date.now() - startTime
+                          reasoningStartTimes.delete(timelineKey)
+                        }
+                      }
                       return {
                         ...message,
                         content: updatedContent,
@@ -719,7 +772,7 @@ const useAIChatStreamHandler = () => {
                           chunk.reasoning_content ?? message.reasoning_content,
                         // timeline 是流式过程中逐步搭建起来的真实顺序记录，
                         // RunCompleted 时不应该用某个汇总字段覆盖掉它，保留原样即可。
-                        timeline: message.timeline,
+                        timeline,
                         tool_calls: processChunkToolCalls(
                           chunk,
                           message.tool_calls

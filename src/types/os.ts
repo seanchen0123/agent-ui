@@ -1,5 +1,5 @@
 export type TimelineStep =
-  | { id: string; type: 'reasoning'; content: string }
+  | { id: string; type: 'reasoning'; content: string; durationMs?: number }
   | { id: string; type: 'tool_call'; tool: ToolCall }
   | {
       id: string
